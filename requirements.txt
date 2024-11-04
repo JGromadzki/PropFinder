@@ -12,7 +12,6 @@ plotly
 tabulate
 pandas
 requests
-json
 bs4
 time
 urllib.parse 
