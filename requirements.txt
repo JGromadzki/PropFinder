@@ -13,5 +13,4 @@ tabulate
 pandas
 requests
 bs4
-time
 urllib.parse 
