@@ -3,25 +3,25 @@ import requests
 import json
 import pandas as pd
 from bs4 import BeautifulSoup
-import time
-from datetime import datetime
 import os
+from datetime import datetime
 import numpy as np
 
 class PropertyFinderScraper:
     def __init__(self):
-        self.all_listings = []
-        self.base_url = ''
+        self.base_url = ""
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
         }
+        self.all_listings = []
 
-    def fetch_listings_from_page(self, url, page_number):
+    def fetch_listings_from_page(self, page_number):
+        """Fetch listings from a single page."""
         try:
-            response = requests.get(url.format(page_number), headers=self.headers, timeout=30)
+            response = requests.get(self.base_url.format(page_number), headers=self.headers, timeout=30)
             if response.status_code != 200:
                 return None
 
@@ -39,15 +39,17 @@ class PropertyFinderScraper:
         except Exception:
             return None
 
-    def scrape(self, url, max_pages=1000):
+    def scrape(self, max_pages=1000):
+        """Scrape all pages and yield progress."""
         for page_number in range(1, max_pages + 1):
-            listings = self.fetch_listings_from_page(url, page_number)
+            listings = self.fetch_listings_from_page(page_number)
             if not listings:
                 break
             self.all_listings.extend(listings)
             yield page_number, len(self.all_listings)
 
     def process_listings_to_dataframe(self):
+        """Flatten and convert listings to a DataFrame."""
         def flatten_dict(d, parent_key='', sep='_'):
             items = []
             for k, v in d.items():
@@ -60,9 +62,7 @@ class PropertyFinderScraper:
                     items.append((new_key, v))
             return dict(items)
 
-        processed_listings = []
-        for listing in self.all_listings:
-            processed_listings.append(flatten_dict(listing))
+        processed_listings = [flatten_dict(listing) for listing in self.all_listings]
         df = pd.DataFrame(processed_listings).replace({np.nan: None})
         return df
 
@@ -70,26 +70,28 @@ class PropertyFinderScraper:
 st.title("PropertyFinder Scraper")
 
 # Input field for the base URL
-url = st.text_input("Enter the PropertyFinder URL for scraping (e.g., 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}')")
+url = st.text_input(
+    "Enter the PropertyFinder URL (e.g., 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}'):"
+)
 
 # Scraping logic
 if url:
     scraper = PropertyFinderScraper()
     scraper.base_url = url
     st.write("Scraping in progress... Please wait.")
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    scraped_data = pd.DataFrame()
+    pages_scraped = 0
+    properties_scraped = 0
 
     with st.spinner("Scraping..."):
-        for page, total_properties in scraper.scrape(url):
-            progress_bar.progress(min(page / 1000, 1.0))  # Update progress bar
-            status_text.text(f"Pages scraped: {page} | Total properties scraped: {total_properties}")
-            time.sleep(1)
+        for page, total_properties in scraper.scrape():
+            pages_scraped = page
+            properties_scraped = total_properties
 
         scraped_data = scraper.process_listings_to_dataframe()
 
     st.success("Scraping completed!")
+    st.write(f"**Pages Scraped:** {pages_scraped}")
+    st.write(f"**Total Properties Scraped:** {properties_scraped}")
 
     # Display data and download option
     if not scraped_data.empty:
