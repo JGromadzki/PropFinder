@@ -8,9 +8,6 @@ python-dotenv
 watchdog  # to supress warning
 pre-commit
 st-pages
-plotly
-tabulate == 0.55.2
 os
 datetime
 logging
-numpy
