@@ -4,7 +4,6 @@ import json
 import pandas as pd
 from bs4 import BeautifulSoup
 import os
-from datetime import datetime
 import numpy as np
 
 class PropertyFinderScraper:
@@ -79,6 +78,11 @@ if url:
     scraper = PropertyFinderScraper()
     scraper.base_url = url
     st.write("Scraping in progress... Please wait.")
+    
+    # Placeholders for dynamic updates
+    pages_scraped_placeholder = st.empty()
+    properties_scraped_placeholder = st.empty()
+
     pages_scraped = 0
     properties_scraped = 0
 
@@ -87,11 +91,13 @@ if url:
             pages_scraped = page
             properties_scraped = total_properties
 
+            # Update the placeholders dynamically
+            pages_scraped_placeholder.write(f"**Pages Scraped:** {pages_scraped}")
+            properties_scraped_placeholder.write(f"**Total Properties Scraped:** {properties_scraped}")
+
         scraped_data = scraper.process_listings_to_dataframe()
 
     st.success("Scraping completed!")
-    st.write(f"**Pages Scraped:** {pages_scraped}")
-    st.write(f"**Total Properties Scraped:** {properties_scraped}")
 
     # Display data and download option
     if not scraped_data.empty:
