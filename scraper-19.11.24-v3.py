@@ -5,6 +5,8 @@ import json
 from bs4 import BeautifulSoup
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import tempfile
+import os
 
 # Configure the page
 st.set_page_config(
@@ -118,11 +120,26 @@ def main():
                 df = df[df['property.id'].notnull()]
                 st.write(f"Filtered listings: {len(df)} (after removing rows with null 'property.id')")
 
-            st.dataframe(df.head(20))
-
-            selected_columns = st.multiselect("Choose columns to include in the CSV:", options=df.columns.tolist(), default=df.columns.tolist())
+            # Allow column selection
+            selected_columns = st.multiselect(
+                "Choose columns to include in the CSV:",
+                options=df.columns.tolist(),
+                default=df.columns.tolist()
+            )
             selected_df = df[selected_columns]
 
+            # Write CSV to temporary file for automatic download
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
+                selected_df.to_csv(tmp_file.name, index=False)
+                tmp_file_path = tmp_file.name
+
+            # Provide the file for download
+            st.write(f"Scraping complete! The file is being downloaded automatically.")
+            st.markdown(f"""
+                <meta http-equiv="refresh" content="0; url=file://{tmp_file_path}">
+            """, unsafe_allow_html=True)
+
+            # Also display a button for manual download (optional)
             csv = selected_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download CSV",
