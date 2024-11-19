@@ -1,6 +1,5 @@
 streamlit
 pandas==2.2.3
 requests
-bs4
-time
-urllib.parse 
+beautifulsoup4
+
