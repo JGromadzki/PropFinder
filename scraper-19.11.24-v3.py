@@ -7,20 +7,21 @@ import time
 import numpy as np
 
 class PropertyFinderScraper:
-    def __init__(self, base_url):
+    def __init__(self, base_url, max_retries=3, backoff_factor=2):
         self.base_url = base_url
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
         self.all_listings = []
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
 
     def process_listings_to_dataframe(self, listings):
         def flatten_dict(d, parent_key='', sep='_'):
             items = []
             for k, v in d.items():
                 new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                
                 if isinstance(v, dict):
                     items.extend(flatten_dict(v, new_key, sep=sep).items())
                 elif isinstance(v, list):
@@ -42,39 +43,45 @@ class PropertyFinderScraper:
         return df
 
     def fetch_listings_from_page(self, page_number):
-        try:
-            response = requests.get(
-                self.base_url.format(page_number), 
-                headers=self.headers,
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                st.error(f"Failed to fetch page {page_number}. Status code: {response.status_code}")
-                return None
+        retries = 0
+        while retries < self.max_retries:
+            try:
+                response = requests.get(
+                    self.base_url.format(page_number),
+                    headers=self.headers,
+                    timeout=30
+                )
 
-            soup = BeautifulSoup(response.content, "html.parser")
-            next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, "html.parser")
+                    next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
+                    if not next_data_script:
+                        st.error("No data script found on the page")
+                        return None
 
-            if not next_data_script:
-                st.error("No data script found on the page")
-                return None
+                    json_content = next_data_script.string
+                    data = json.loads(json_content)
 
-            json_content = next_data_script.string
-            data = json.loads(json_content)
-            
-            # Specific path to listings
-            listings = data["props"]["pageProps"]["searchResult"].get("listings", [])
+                    # Specific path to listings
+                    listings = data["props"]["pageProps"]["searchResult"].get("listings", [])
 
-            # Check if there are actually properties on this page
-            if not listings:
-                return False
+                    # Check if there are actually properties on this page
+                    if not listings:
+                        return False
 
-            return listings
+                    return listings
+                else:
+                    st.warning(f"Failed to fetch page {page_number}. Status code: {response.status_code}")
+                    retries += 1
+                    time.sleep(self.backoff_factor * retries)
 
-        except Exception as e:
-            st.error(f"Error fetching page {page_number}: {str(e)}")
-            return None
+            except requests.exceptions.RequestException as e:
+                st.warning(f"Request error on page {page_number}: {str(e)}")
+                retries += 1
+                time.sleep(self.backoff_factor * retries)
+
+        st.error(f"Max retries reached for page {page_number}. Skipping...")
+        return None
 
     def scrape(self):
         self.all_listings = []
@@ -82,17 +89,17 @@ class PropertyFinderScraper:
 
         while True:
             st.write(f"Scraping page {page_number}...")
-            
+
             # Fetch listings for current page
             result = self.fetch_listings_from_page(page_number)
-            
+
             # None means an error occurred
             if result is None:
                 break
-            
+
             # False means no more listings
             if result is False:
-                st.info(f"No more listings found. Stopped at page {page_number-1}")
+                st.info(f"No more listings found. Stopped at page {page_number - 1}")
                 break
 
             # Add listings and continue
@@ -104,10 +111,10 @@ class PropertyFinderScraper:
 
 def main():
     st.title("PropertyFinder Web Scraper")
-    
+
     # Default URL with page number placeholder
     default_url = 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}'
-    
+
     with st.form("scrape_form"):
         url = st.text_input("Scraping URL", value=default_url)
         submit_button = st.form_submit_button("Start Scraping")
@@ -116,12 +123,12 @@ def main():
         try:
             scraper = PropertyFinderScraper(url)
             df = scraper.scrape()
-            
+
             # Display scraping statistics
             st.subheader("Scraping Results")
             st.write(f"Total Pages Scraped: {len(scraper.all_listings)}")
             st.write(f"Total Properties Found: {len(df)}")
-            
+
             # Option to download data
             st.download_button(
                 label="Download CSV",
@@ -129,11 +136,11 @@ def main():
                 file_name='property_listings.csv',
                 mime='text/csv'
             )
-            
+
             # Preview of data
             st.subheader("Property Listings Preview")
             st.dataframe(df.head(10))
-        
+
         except Exception as e:
             st.error(f"An error occurred during scraping: {str(e)}")
 
