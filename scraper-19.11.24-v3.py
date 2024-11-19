@@ -9,6 +9,10 @@ st.write("Input a URL to scrape property listings and view the results dynamical
 # Input URL
 url_input = st.text_input("Enter the Property Finder search URL", "")
 
+# Variables to track progress
+scraped_properties = []
+scraped_pages = 0
+
 # User Interaction
 if st.button("Start Scraping"):
     if not url_input:
@@ -18,15 +22,11 @@ if st.button("Start Scraping"):
         st.write("Starting the scraper...")
         scraper = PropertyFinderScraper(output_file='property_listings_data.csv', checkpoint_file='scraping_checkpoint.json')
         
-        # Temporary list for progress tracking
-        scraped_properties = []
-        scraped_pages = 0
-
         # Callback function to fetch properties and update status
-        def scrape_properties(scraper, max_pages=10000):
-            nonlocal scraped_properties, scraped_pages
+        def scrape_properties(scraper, url, max_pages=10000):
+            global scraped_properties, scraped_pages
             try:
-                scraper.base_url = url_input  # Override base URL with user input
+                scraper.base_url = url  # Override base URL with user input
                 for page_number in range(scraper.last_page, max_pages + 1):
                     st.write(f"Scraping page {page_number}...")
                     listings = scraper.fetch_listings_from_page(page_number)
@@ -43,7 +43,7 @@ if st.button("Start Scraping"):
                 st.error(f"An error occurred: {str(e)}")
 
         # Run the scraper
-        scrape_properties(scraper)
+        scrape_properties(scraper, url_input)
 
         # Display results
         st.success("Scraping completed!")
