@@ -1,13 +1,7 @@
-openai
-langchain
 streamlit
-streamlit-chat
-streamlit-extras
-altair==4.0
-python-dotenv
-watchdog  # to supress warning
-pre-commit
-st-pages
-os
-datetime
-logging
+pandas
+requests
+json
+bs4
+time
+urllib.parse 
