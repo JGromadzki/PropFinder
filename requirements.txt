@@ -13,7 +13,6 @@ tabulate
 pandas
 requests
 bs4
-time
 os
 datetime
 logging
