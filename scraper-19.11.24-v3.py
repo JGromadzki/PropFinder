@@ -3,7 +3,6 @@ import requests
 import json
 import pandas as pd
 from bs4 import BeautifulSoup
-import os
 import numpy as np
 
 class PropertyFinderScraper:
@@ -85,6 +84,7 @@ if url:
 
     pages_scraped = 0
     properties_scraped = 0
+    scraped_data = None
 
     with st.spinner("Scraping..."):
         for page, total_properties in scraper.scrape():
@@ -95,12 +95,17 @@ if url:
             pages_scraped_placeholder.write(f"**Pages Scraped:** {pages_scraped}")
             properties_scraped_placeholder.write(f"**Total Properties Scraped:** {properties_scraped}")
 
+        # Process the scraped data into a DataFrame
         scraped_data = scraper.process_listings_to_dataframe()
 
     st.success("Scraping completed!")
 
-    # Display data and download option
-    if not scraped_data.empty:
+    # Display number of pages and properties scraped
+    st.write(f"**Pages Scraped:** {pages_scraped}")
+    st.write(f"**Total Properties Scraped:** {properties_scraped}")
+
+    # Display data and download option if data exists
+    if scraped_data is not None and not scraped_data.empty:
         st.dataframe(scraped_data)
         csv = scraped_data.to_csv(index=False)
         st.download_button(
@@ -109,5 +114,7 @@ if url:
             file_name="scraped_properties.csv",
             mime="text/csv",
         )
+    else:
+        st.warning("No data was scraped. Please check the URL or try again.")
 else:
     st.info("Please enter a valid PropertyFinder URL to start scraping.")
