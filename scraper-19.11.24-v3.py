@@ -63,8 +63,12 @@ class PropertyFinderScraper:
             json_content = next_data_script.string
             data = json.loads(json_content)
             
-            # Check if listings exist in the parsed data
+            # Specific path to listings
             listings = data["props"]["pageProps"]["searchResult"].get("listings", [])
+
+            # Check if there are actually properties on this page
+            if not listings:
+                return False
 
             return listings
 
@@ -72,21 +76,27 @@ class PropertyFinderScraper:
             st.error(f"Error fetching page {page_number}: {str(e)}")
             return None
 
-    def scrape(self, max_pages=10):
+    def scrape(self):
         self.all_listings = []
         page_number = 1
 
-        while page_number <= max_pages:
+        while True:
             st.write(f"Scraping page {page_number}...")
             
-            listings = self.fetch_listings_from_page(page_number)
+            # Fetch listings for current page
+            result = self.fetch_listings_from_page(page_number)
             
-            # Stop if no listings found
-            if not listings:
-                st.info(f"No more listings found. Stopping at page {page_number-1}")
+            # None means an error occurred
+            if result is None:
+                break
+            
+            # False means no more listings
+            if result is False:
+                st.info(f"No more listings found. Stopped at page {page_number-1}")
                 break
 
-            self.all_listings.extend(listings)
+            # Add listings and continue
+            self.all_listings.extend(result)
             page_number += 1
             time.sleep(1)  # Polite delay between requests
 
@@ -100,13 +110,12 @@ def main():
     
     with st.form("scrape_form"):
         url = st.text_input("Scraping URL", value=default_url)
-        max_pages = st.number_input("Maximum Pages to Scrape", min_value=1, max_value=50, value=8)
         submit_button = st.form_submit_button("Start Scraping")
 
     if submit_button:
         try:
             scraper = PropertyFinderScraper(url)
-            df = scraper.scrape(max_pages)
+            df = scraper.scrape()
             
             # Display scraping statistics
             st.subheader("Scraping Results")
