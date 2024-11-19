@@ -13,3 +13,9 @@ tabulate
 pandas
 requests
 bs4
+json
+time
+os
+datetime
+logging
+numpy
