@@ -1,13 +1,8 @@
-import streamlit as st
-import requests
-import json
-import pandas as pd
-from bs4 import BeautifulSoup
-import numpy as np
+
 
 class PropertyFinderScraper:
-    def __init__(self):
-        self.base_url = ""
+    def __init__(self, base_url):
+        self.base_url = base_url
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -19,7 +14,8 @@ class PropertyFinderScraper:
     def fetch_listings_from_page(self, page_number):
         """Fetch listings from a single page."""
         try:
-            response = requests.get(self.base_url.format(page_number), headers=self.headers, timeout=30)
+            url = self.base_url.format(page_number)
+            response = requests.get(url, headers=self.headers, timeout=30)
             if response.status_code != 200:
                 return None
 
@@ -64,6 +60,7 @@ class PropertyFinderScraper:
         df = pd.DataFrame(processed_listings).replace({np.nan: None})
         return df
 
+
 # Streamlit App
 st.title("PropertyFinder Scraper")
 
@@ -74,47 +71,49 @@ url = st.text_input(
 
 # Scraping logic
 if url:
-    scraper = PropertyFinderScraper()
-    scraper.base_url = url
-    st.write("Scraping in progress... Please wait.")
-    
-    # Placeholders for dynamic updates
-    pages_scraped_placeholder = st.empty()
-    properties_scraped_placeholder = st.empty()
-
-    pages_scraped = 0
-    properties_scraped = 0
-    scraped_data = None
-
-    with st.spinner("Scraping..."):
-        for page, total_properties in scraper.scrape():
-            pages_scraped = page
-            properties_scraped = total_properties
-
-            # Update the placeholders dynamically
-            pages_scraped_placeholder.write(f"**Pages Scraped:** {pages_scraped}")
-            properties_scraped_placeholder.write(f"**Total Properties Scraped:** {properties_scraped}")
-
-        # Process the scraped data into a DataFrame
-        scraped_data = scraper.process_listings_to_dataframe()
-
-    st.success("Scraping completed!")
-
-    # Display number of pages and properties scraped
-    st.write(f"**Pages Scraped:** {pages_scraped}")
-    st.write(f"**Total Properties Scraped:** {properties_scraped}")
-
-    # Display data and download option if data exists
-    if scraped_data is not None and not scraped_data.empty:
-        st.dataframe(scraped_data)
-        csv = scraped_data.to_csv(index=False)
-        st.download_button(
-            label="Download CSV",
-            data=csv,
-            file_name="scraped_properties.csv",
-            mime="text/csv",
-        )
+    if "{page}" not in url:
+        st.warning("Please ensure your URL includes '{page}' as a placeholder for pagination.")
     else:
-        st.warning("No data was scraped. Please check the URL or try again.")
+        scraper = PropertyFinderScraper(base_url=url)
+        st.write("Scraping in progress... Please wait.")
+        
+        # Placeholders for dynamic updates
+        pages_scraped_placeholder = st.empty()
+        properties_scraped_placeholder = st.empty()
+
+        pages_scraped = 0
+        properties_scraped = 0
+        scraped_data = None
+
+        with st.spinner("Scraping..."):
+            for page, total_properties in scraper.scrape():
+                pages_scraped = page
+                properties_scraped = total_properties
+
+                # Update the placeholders dynamically
+                pages_scraped_placeholder.write(f"**Pages Scraped:** {pages_scraped}")
+                properties_scraped_placeholder.write(f"**Total Properties Scraped:** {properties_scraped}")
+
+            # Process the scraped data into a DataFrame
+            scraped_data = scraper.process_listings_to_dataframe()
+
+        st.success("Scraping completed!")
+
+        # Display number of pages and properties scraped
+        st.write(f"**Pages Scraped:** {pages_scraped}")
+        st.write(f"**Total Properties Scraped:** {properties_scraped}")
+
+        # Display data and download option if data exists
+        if scraped_data is not None and not scraped_data.empty:
+            st.dataframe(scraped_data)
+            csv = scraped_data.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="scraped_properties.csv",
+                mime="text/csv",
+            )
+        else:
+            st.warning("No data was scraped. Please check the URL or try again.")
 else:
     st.info("Please enter a valid PropertyFinder URL to start scraping.")
