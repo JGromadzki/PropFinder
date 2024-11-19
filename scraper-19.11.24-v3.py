@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -29,39 +28,6 @@ st.markdown("""
         border-radius: 5px;
         background-color: #000000;
         color: white;
-    }
-    .scraping-card-container {
-        display: flex;
-        justify-content: center;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-    }
-    .scraping-card {
-        width: 25%;
-        max-width: 300px;
-        position: relative;
-        background-image: url('https://assets-news.housing.com/news/wp-content/uploads/2018/06/24201341/HNIs-find-Dubai-property-more-attractive-than-Indian-real-estate-FB-1200x628-compressed.jpg');
-        background-size: cover;
-        background-position: center;
-        height: 150px;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: transform 0.3s, box-shadow 0.3s;
-    }
-    .scraping-card:hover {
-        transform: scale(1.05);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-    }
-    .scraping-card h2 {
-        font-size: 1.1rem;
-        background-color: rgba(0, 0, 0, 0.6);
-        padding: 0.5rem 1rem;
-        border-radius: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -102,16 +68,6 @@ def main():
     else:
         base_url = 'https://www.propertyfinder.ae/en/search?l=1&c=2&t=1&fu=0&rp=y&ob=mr&page={}'
 
-    st.markdown("<div class='scraping-card-container'>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="scraping-card" onclick="document.getElementById('scrape-button').click();">
-            <h2>Scrape Properties for Rent</h2>
-        </div>
-        """, unsafe_allow_html=True
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
     scrape_button = st.button("Start Scraping", key="scrape-button")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
@@ -120,10 +76,15 @@ def main():
         'Connection': 'keep-alive',
     }
 
+    # Metrics placeholders
+    properties_placeholder = st.empty()
+    pages_placeholder = st.empty()
+
     if scrape_button:
         page_number = 1
         retry_count = 0
         all_listings = []
+        total_properties = 0
 
         while True:
             listings = fetch_listings_from_page(base_url, page_number, headers)
@@ -140,6 +101,12 @@ def main():
 
             retry_count = 0
             all_listings.extend(listings)
+            total_properties += len(listings)
+
+            # Update metrics
+            properties_placeholder.metric("Total Properties Scraped", total_properties)
+            pages_placeholder.metric("Pages Scraped", page_number)
+
             page_number += 1
             time.sleep(1)
 
@@ -161,3 +128,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
