@@ -10,7 +10,6 @@ pre-commit
 st-pages
 plotly
 tabulate
-pandas
 os
 datetime
 logging
