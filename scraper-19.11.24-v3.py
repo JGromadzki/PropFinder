@@ -112,7 +112,12 @@ def main():
 
         if all_listings:
             df = pd.json_normalize(all_listings)
-            st.write(f"Total listings extracted: {len(df)}")
+
+            # Filter out rows where property.id is null
+            if 'property.id' in df.columns:
+                df = df[df['property.id'].notnull()]
+                st.write(f"Filtered listings: {len(df)} (after removing rows with null 'property.id')")
+
             st.dataframe(df.head(20))
 
             selected_columns = st.multiselect("Choose columns to include in the CSV:", options=df.columns.tolist(), default=df.columns.tolist())
@@ -128,4 +133,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
