@@ -4,9 +4,6 @@ import json
 import pandas as pd
 from bs4 import BeautifulSoup
 import time
-import os
-from datetime import datetime
-import logging
 
 class PropertyFinderStreamlitScraper:
     def __init__(self):
@@ -17,82 +14,66 @@ class PropertyFinderStreamlitScraper:
             'Connection': 'keep-alive',
         }
         self.all_listings = []
-        self.max_consecutive_errors = 5
-        self.consecutive_errors = 0
+        self.max_consecutive_errors = 3
 
     def fetch_listings_from_page(self, url, page_number):
-        """Fetch listings from a single page with enhanced error handling"""
-        max_retries = 3
-        retry_delay = 5
+        """Fetch listings from a single page"""
+        try:
+            full_url = f"{url}&page={page_number}"
+            response = requests.get(full_url, headers=self.headers, timeout=30)
+            
+            if response.status_code != 200:
+                st.warning(f"Failed to fetch page {page_number}: Status code {response.status_code}")
+                return None
 
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(
-                    f"{url}&page={page_number}", 
-                    headers=self.headers,
-                    timeout=30
-                )
-                
-                if response.status_code != 200:
-                    raise requests.RequestException(f"Status code: {response.status_code}")
+            soup = BeautifulSoup(response.content, "html.parser")
+            next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
 
-                soup = BeautifulSoup(response.content, "html.parser")
-                next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
+            if not next_data_script:
+                st.warning(f"No data found on page {page_number}")
+                return None
 
-                if not next_data_script:
-                    raise ValueError("No __NEXT_DATA__ script found")
+            json_content = next_data_script.string
+            data = json.loads(json_content)
+            listings = data["props"]["pageProps"]["searchResult"]["listings"]
 
-                json_content = next_data_script.string
-                data = json.loads(json_content)
-                listings = data["props"]["pageProps"]["searchResult"]["listings"]
+            if not listings:
+                return None
 
-                if listings:
-                    self.consecutive_errors = 0
-                    return listings
-                else:
-                    raise ValueError("No listings found in the response")
+            return listings
 
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    st.warning(f"Error on page {page_number}, attempt {attempt + 1}/{max_retries}: {str(e)}")
-                    time.sleep(retry_delay * (attempt + 1))
-                else:
-                    self.consecutive_errors += 1
-                    st.error(f"Failed to fetch page {page_number} after {max_retries} attempts: {str(e)}")
-                    return None
+        except Exception as e:
+            st.warning(f"Error fetching page {page_number}: {str(e)}")
+            return None
 
-    def scrape(self, base_url, max_pages=100):
-        """Main scraping function with Streamlit progress tracking"""
+    def scrape(self, base_url):
+        """Scrape all pages until no more listings are found"""
         self.all_listings = []
+        page_number = 1
+        consecutive_empty_pages = 0
+        
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        for page_number in range(1, max_pages + 1):
+        while consecutive_empty_pages < self.max_consecutive_errors:
             status_text.text(f"Scraping page {page_number}...")
             
-            # Check if we've had too many consecutive errors
-            if self.consecutive_errors >= self.max_consecutive_errors:
-                st.warning(f"Too many consecutive errors ({self.consecutive_errors}). Stopping scraping.")
-                break
-            
             listings = self.fetch_listings_from_page(base_url, page_number)
-
-            if not listings:
-                st.info("No more listings found or reached the end")
-                break
-
-            # Process the new listings
-            self.all_listings.extend(listings)
             
-            # Update progress
-            progress_percentage = min(page_number / max_pages, 1.0)
-            progress_bar.progress(progress_percentage)
+            if listings is None:
+                consecutive_empty_pages += 1
+                st.warning(f"No listings found on page {page_number}. Attempts remaining: {self.max_consecutive_errors - consecutive_empty_pages}")
+            else:
+                self.all_listings.extend(listings)
+                consecutive_empty_pages = 0
+                
+                # Update progress visualization
+                status_text.text(f"Total properties scraped: {len(self.all_listings)} on page {page_number}")
             
-            status_text.text(f"Total properties scraped: {len(self.all_listings)} on page {page_number}")
-            
+            page_number += 1
             time.sleep(1)  # Polite delay between requests
 
-        progress_bar.empty()
+        progress_bar.progress(1.0)
         status_text.text(f"Scraping complete. Total properties: {len(self.all_listings)}")
         
         return self.all_listings
@@ -110,20 +91,12 @@ def main():
         help="Use the full search URL from PropertyFinder.ae"
     )
     
-    # Max pages input
-    max_pages = st.number_input(
-        "Maximum number of pages to scrape", 
-        min_value=1, 
-        max_value=10000, 
-        value=10
-    )
-    
     # Scrape button
     if st.button("Start Scraping"):
         scraper = PropertyFinderStreamlitScraper()
         
         try:
-            listings = scraper.scrape(base_url, max_pages)
+            listings = scraper.scrape(base_url)
             
             if listings:
                 # Convert to DataFrame
