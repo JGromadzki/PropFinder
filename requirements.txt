@@ -9,7 +9,7 @@ watchdog  # to supress warning
 pre-commit
 st-pages
 plotly
-tabulate
+tabulate == 0.55.2
 os
 datetime
 logging
