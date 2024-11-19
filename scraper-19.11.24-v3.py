@@ -3,6 +3,8 @@ import requests
 import json
 import pandas as pd
 from bs4 import BeautifulSoup
+import time
+import logging
 import numpy as np
 
 class PropertyFinderScraper:
@@ -15,110 +17,138 @@ class PropertyFinderScraper:
             'Connection': 'keep-alive',
         }
         self.all_listings = []
+        self.max_consecutive_errors = 5
+        self.consecutive_errors = 0
 
-    def fetch_listings_from_page(self, page_number):
-        """Fetch listings from a single page."""
-        try:
-            url = self.base_url.format(page_number)
-            response = requests.get(url, headers=self.headers, timeout=30)
-            if response.status_code != 200:
-                return None
-
-            soup = BeautifulSoup(response.content, "html.parser")
-            next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
-
-            if not next_data_script:
-                return None
-
-            json_content = next_data_script.string
-            data = json.loads(json_content)
-            listings = data["props"]["pageProps"]["searchResult"]["listings"]
-
-            return listings if listings else None
-        except Exception:
-            return None
-
-    def scrape(self, max_pages=1000):
-        """Scrape all pages and yield progress."""
-        for page_number in range(1, max_pages + 1):
-            listings = self.fetch_listings_from_page(page_number)
-            if not listings:
-                break
-            self.all_listings.extend(listings)
-            yield page_number, len(self.all_listings)
-
-    def process_listings_to_dataframe(self):
-        """Flatten and convert listings to a DataFrame."""
+    def process_listings_to_dataframe(self, listings):
         def flatten_dict(d, parent_key='', sep='_'):
             items = []
             for k, v in d.items():
                 new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                
                 if isinstance(v, dict):
                     items.extend(flatten_dict(v, new_key, sep=sep).items())
                 elif isinstance(v, list):
-                    items.append((new_key, str(v)))
+                    items.append((new_key, str(v) if v and isinstance(v[0], dict) else v))
                 else:
                     items.append((new_key, v))
             return dict(items)
 
-        processed_listings = [flatten_dict(listing) for listing in self.all_listings]
-        df = pd.DataFrame(processed_listings).replace({np.nan: None})
+        processed_listings = []
+        for listing in listings:
+            try:
+                flat_listing = flatten_dict(listing)
+                processed_listings.append(flat_listing)
+            except Exception as e:
+                st.warning(f"Error processing listing: {str(e)}")
+
+        df = pd.DataFrame(processed_listings)
+        df = df.replace({np.nan: None})
         return df
 
+    def fetch_listings_from_page(self, page_number):
+        max_retries = 3
+        retry_delay = 5
 
-# Streamlit App
-st.title("PropertyFinder Scraper")
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(
+                    self.base_url.format(page_number), 
+                    headers=self.headers,
+                    timeout=30
+                )
+                
+                if response.status_code != 200:
+                    raise requests.RequestException(f"Status code: {response.status_code}")
 
-# Input field for the base URL
-url = st.text_input(
-    "Enter the PropertyFinder URL (e.g., 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}'):"
-)
+                soup = BeautifulSoup(response.content, "html.parser")
+                next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
 
-# Scraping logic
-if url:
-    if "{page}" not in url:
-        st.warning("Please ensure your URL includes '{page}' as a placeholder for pagination.")
-    else:
-        scraper = PropertyFinderScraper(base_url=url)
-        st.write("Scraping in progress... Please wait.")
+                if not next_data_script:
+                    raise ValueError("No __NEXT_DATA__ script found")
+
+                json_content = next_data_script.string
+                data = json.loads(json_content)
+                listings = data["props"]["pageProps"]["searchResult"]["listings"]
+
+                if listings:
+                    self.consecutive_errors = 0
+                    return listings
+                else:
+                    raise ValueError("No listings found in the response")
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    st.warning(f"Error on page {page_number}, attempt {attempt + 1}/{max_retries}: {str(e)}")
+                    time.sleep(retry_delay * (attempt + 1))
+                else:
+                    self.consecutive_errors += 1
+                    st.error(f"Failed to fetch page {page_number} after {max_retries} attempts: {str(e)}")
+                    return None
+
+    def scrape(self, max_pages=100):
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        self.all_listings = []
         
-        # Placeholders for dynamic updates
-        pages_scraped_placeholder = st.empty()
-        properties_scraped_placeholder = st.empty()
+        for page_number in range(1, max_pages + 1):
+            status_text.text(f"Fetching page {page_number}...")
+            progress_bar.progress(page_number / max_pages)
+            
+            if self.consecutive_errors >= self.max_consecutive_errors:
+                st.warning(f"Too many consecutive errors ({self.consecutive_errors}). Stopping...")
+                break
+            
+            listings = self.fetch_listings_from_page(page_number)
 
-        pages_scraped = 0
-        properties_scraped = 0
-        scraped_data = None
+            if not listings:
+                st.info("No more listings found or reached the end")
+                break
 
-        with st.spinner("Scraping..."):
-            for page, total_properties in scraper.scrape():
-                pages_scraped = page
-                properties_scraped = total_properties
+            self.all_listings.extend(listings)
+            time.sleep(1)  # Polite delay between requests
 
-                # Update the placeholders dynamically
-                pages_scraped_placeholder.write(f"**Pages Scraped:** {pages_scraped}")
-                properties_scraped_placeholder.write(f"**Total Properties Scraped:** {properties_scraped}")
+        progress_bar.progress(1.0)
+        status_text.text("Scraping completed!")
+        
+        return self.process_listings_to_dataframe(self.all_listings)
 
-            # Process the scraped data into a DataFrame
-            scraped_data = scraper.process_listings_to_dataframe()
+def main():
+    st.title("PropertyFinder Web Scraper")
+    
+    # Default URL with page number placeholder
+    default_url = 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}'
+    
+    with st.form("scrape_form"):
+        url = st.text_input("Scraping URL", value=default_url)
+        max_pages = st.number_input("Maximum Pages to Scrape", min_value=1, max_value=1000, value=10)
+        submit_button = st.form_submit_button("Start Scraping")
 
-        st.success("Scraping completed!")
-
-        # Display number of pages and properties scraped
-        st.write(f"**Pages Scraped:** {pages_scraped}")
-        st.write(f"**Total Properties Scraped:** {properties_scraped}")
-
-        # Display data and download option if data exists
-        if scraped_data is not None and not scraped_data.empty:
-            st.dataframe(scraped_data)
-            csv = scraped_data.to_csv(index=False)
+    if submit_button:
+        try:
+            scraper = PropertyFinderScraper(url)
+            df = scraper.scrape(max_pages)
+            
+            # Display scraping statistics
+            st.subheader("Scraping Results")
+            st.write(f"Total Pages Scraped: {len(scraper.all_listings)}")
+            st.write(f"Total Properties Found: {len(df)}")
+            
+            # Option to download data
             st.download_button(
                 label="Download CSV",
-                data=csv,
-                file_name="scraped_properties.csv",
-                mime="text/csv",
+                data=df.to_csv(index=False).encode('utf-8'),
+                file_name='property_listings.csv',
+                mime='text/csv'
             )
-        else:
-            st.warning("No data was scraped. Please check the URL or try again.")
-else:
-    st.info("Please enter a valid PropertyFinder URL to start scraping.")
+            
+            # Preview of data
+            st.subheader("Property Listings Preview")
+            st.dataframe(df.head(10))
+        
+        except Exception as e:
+            st.error(f"An error occurred during scraping: {str(e)}")
+
+if __name__ == "__main__":
+    main()
