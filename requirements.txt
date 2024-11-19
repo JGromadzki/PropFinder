@@ -11,7 +11,7 @@ st-pages
 plotly
 tabulate
 pandas
-requests
+bs4
 os
 datetime
 logging
