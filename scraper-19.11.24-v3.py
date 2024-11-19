@@ -1,153 +1,61 @@
 import streamlit as st
-import requests
-import json
+from scraper import PropertyFinderScraper  # Assume the scraper code is saved as `scraper.py`
 import pandas as pd
-from bs4 import BeautifulSoup
-import time
-import numpy as np
 
-class PropertyFinderScraper:
-    def __init__(self, base_url):
-        self.base_url = base_url
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
-        self.all_listings = []
+# Streamlit App Configuration
+st.title("Property Finder Scraper")
+st.write("Input a URL to scrape property listings and view the results dynamically.")
 
-    def process_listings_to_dataframe(self, listings):
-        def flatten_dict(d, parent_key='', sep='_'):
-            items = []
-            for k, v in d.items():
-                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+# Input URL
+url_input = st.text_input("Enter the Property Finder search URL", "")
 
-                if isinstance(v, dict):
-                    items.extend(flatten_dict(v, new_key, sep=sep).items())
-                elif isinstance(v, list):
-                    items.append((new_key, str(v) if v and isinstance(v[0], dict) else v))
-                else:
-                    items.append((new_key, v))
-            return dict(items)
+# User Interaction
+if st.button("Start Scraping"):
+    if not url_input:
+        st.error("Please enter a valid URL before starting the scraper.")
+    else:
+        # Initialize the scraper
+        st.write("Starting the scraper...")
+        scraper = PropertyFinderScraper(output_file='property_listings_data.csv', checkpoint_file='scraping_checkpoint.json')
+        
+        # Temporary list for progress tracking
+        scraped_properties = []
+        scraped_pages = 0
 
-        processed_listings = []
-        for listing in listings:
+        # Callback function to fetch properties and update status
+        def scrape_properties(scraper, max_pages=10000):
+            nonlocal scraped_properties, scraped_pages
             try:
-                flat_listing = flatten_dict(listing)
-                processed_listings.append(flat_listing)
+                scraper.base_url = url_input  # Override base URL with user input
+                for page_number in range(scraper.last_page, max_pages + 1):
+                    st.write(f"Scraping page {page_number}...")
+                    listings = scraper.fetch_listings_from_page(page_number)
+                    
+                    if listings:
+                        scraped_properties.extend(listings)
+                        scraped_pages += 1
+                        scraper.save_progress(page_number + 1)
+                        st.write(f"Total properties scraped: {len(scraped_properties)}")
+                    else:
+                        st.write("No more listings found. Stopping scraper.")
+                        break
             except Exception as e:
-                st.warning(f"Error processing listing: {str(e)}")
+                st.error(f"An error occurred: {str(e)}")
 
-        df = pd.DataFrame(processed_listings)
-        df = df.replace({np.nan: None})
-        return df
+        # Run the scraper
+        scrape_properties(scraper)
 
-    def fetch_listings_from_page(self, page_number):
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(
-                    self.base_url.format(page_number),
-                    headers=self.headers,
-                    timeout=30
-                )
+        # Display results
+        st.success("Scraping completed!")
+        st.write(f"**Total Properties Scraped:** {len(scraped_properties)}")
+        st.write(f"**Total Pages Scraped:** {scraped_pages}")
 
-                if response.status_code != 200:
-                    st.warning(f"Attempt {attempt+1}: Failed to fetch page {page_number}. Status code: {response.status_code}")
-                    time.sleep(1)
-                    continue  # Retry
+        # Option to view scraped data
+        if len(scraped_properties) > 0:
+            st.write("Scraped Data Preview:")
+            df = pd.DataFrame(scraped_properties)
+            st.dataframe(df)
 
-                soup = BeautifulSoup(response.content, "html.parser")
-                next_data_script = soup.find("script", {"id": "__NEXT_DATA__"})
-
-                if not next_data_script:
-                    st.warning(f"Attempt {attempt+1}: No data script found on the page")
-                    time.sleep(1)
-                    continue  # Retry
-
-                json_content = next_data_script.string
-                data = json.loads(json_content)
-
-                # Specific path to listings
-                listings = data["props"]["pageProps"]["searchResult"].get("listings", [])
-
-                # Check if there are actually properties on this page
-                if not listings:
-                    return False
-
-                return listings
-
-            except Exception as e:
-                st.warning(f"Attempt {attempt+1}: Error fetching page {page_number}: {str(e)}")
-                time.sleep(1)
-                continue  # Retry
-
-        st.error(f"Failed to fetch page {page_number} after {max_retries} attempts.")
-        return None
-
-    def scrape(self):
-        self.all_listings = []
-        page_number = 1
-
-        while True:
-            st.write(f"Scraping page {page_number}...")
-
-            # Fetch listings for current page
-            result = self.fetch_listings_from_page(page_number)
-
-            # None means an error occurred after retries
-            if result is None:
-                st.warning(f"Skipping page {page_number} due to errors.")
-                page_number += 1
-                continue
-
-            # False means no more listings
-            if result is False:
-                st.info(f"No more listings found. Stopped at page {page_number - 1}")
-                break
-
-            # Add listings and continue
-            self.all_listings.extend(result)
-            page_number += 1
-            time.sleep(1)  # Polite delay between requests
-
-        self.total_pages_scraped = page_number - 1
-        return self.process_listings_to_dataframe(self.all_listings)
-
-def main():
-    st.title("PropertyFinder Web Scraper")
-
-    # Default URL with page number placeholder
-    default_url = 'https://www.propertyfinder.ae/en/search?l=1&c=1&fu=0&ob=mr&page={}'
-
-    # Use a form with a submit button to start scraping
-    with st.form("scrape_form"):
-        url = st.text_input("Enter the scraping URL", value=default_url)
-        submit_button = st.form_submit_button("Start Scraping")
-
-    if submit_button:
-        try:
-            scraper = PropertyFinderScraper(url)
-            df = scraper.scrape()
-
-            # Display scraping statistics
-            st.subheader("Scraping Results")
-            st.write(f"Total Pages Scraped: {scraper.total_pages_scraped}")
-            st.write(f"Total Properties Found: {len(df)}")
-
-            # Option to download data
-            st.download_button(
-                label="Download CSV",
-                data=df.to_csv(index=False).encode('utf-8'),
-                file_name='property_listings.csv',
-                mime='text/csv'
-            )
-
-            # Preview of data
-            st.subheader("Property Listings Preview")
-            st.dataframe(df.head(10))
-
-        except Exception as e:
-            st.error(f"An error occurred during scraping: {str(e)}")
-
-if __name__ == "__main__":
-    main()
+# Footer
+st.markdown("---")
+st.markdown("Developed using Streamlit and BeautifulSoup.")
