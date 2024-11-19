@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import tempfile
-import os
 
 # Configure the page
 st.set_page_config(
@@ -120,7 +119,16 @@ def main():
                 df = df[df['property.id'].notnull()]
                 st.write(f"Filtered listings: {len(df)} (after removing rows with null 'property.id')")
 
-            # Allow column selection
+            # Automatically download the CSV file with all columns
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
+                df.to_csv(tmp_file.name, index=False)
+                tmp_file_path = tmp_file.name
+
+            st.markdown(f"""
+                <meta http-equiv="refresh" content="0; url=file://{tmp_file_path}">
+            """, unsafe_allow_html=True)
+
+            # Allow user to modify output and download again
             selected_columns = st.multiselect(
                 "Choose columns to include in the CSV:",
                 options=df.columns.tolist(),
@@ -128,25 +136,15 @@ def main():
             )
             selected_df = df[selected_columns]
 
-            # Write CSV to temporary file for automatic download
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
-                selected_df.to_csv(tmp_file.name, index=False)
-                tmp_file_path = tmp_file.name
-
-            # Provide the file for download
-            st.write(f"Scraping complete! The file is being downloaded automatically.")
-            st.markdown(f"""
-                <meta http-equiv="refresh" content="0; url=file://{tmp_file_path}">
-            """, unsafe_allow_html=True)
-
-            # Also display a button for manual download (optional)
+            # Provide a button for the user to download the modified file
             csv = selected_df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="Download CSV",
+                label="Download Custom CSV",
                 data=csv,
-                file_name='property_listings_data.csv',
+                file_name='custom_property_listings_data.csv',
                 mime='text/csv',
             )
 
 if __name__ == "__main__":
     main()
+
